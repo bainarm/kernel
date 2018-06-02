@@ -529,11 +529,12 @@ int ov_camera_module_s_power(struct v4l2_subdev *sd, int on)
 				cam_mod->state = OV_CAMERA_MODULE_SW_STANDBY;
 		}
 		if (cam_mod->state == OV_CAMERA_MODULE_SW_STANDBY) {
+#if 0
 			ret = pltfrm_camera_module_set_pin_state(
 				&cam_mod->sd,
 				PLTFRM_CAMERA_MODULE_PIN_PD,
 				PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
-
+#endif
 			if (!IS_ERR_VALUE(ret))
 				cam_mod->state = OV_CAMERA_MODULE_HW_STANDBY;
 		}
@@ -1095,7 +1096,7 @@ int ov_camera_module_init(struct ov_camera_module *cam_mod,
 
 	ret = pltfrm_camera_module_set_pin_state(&cam_mod->sd,
 				PLTFRM_CAMERA_MODULE_PIN_PD,
-				PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
+				PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
 	ret = pltfrm_camera_module_set_pin_state(&cam_mod->sd,
 				PLTFRM_CAMERA_MODULE_PIN_RESET,
 				PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);

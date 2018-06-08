@@ -213,7 +213,6 @@
 		regulator-always-on;
 	};
 
-
         vcc5v1_host: vcc5v1-host-regulator {
 		compatible = "regulator-fixed";
 		enable-active-high;
@@ -221,6 +220,16 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&host2_vbus_drv>;
 		regulator-name = "vcc5v1_host";
+		regulator-always-on;
+	};
+
+        vcc5v_typec1_host: vcc5v_typec1_host-regulator {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio2 RK_PD4 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&typec1_vbus_drv>;
+		regulator-name = "vcc5v_typec1_host";
 		regulator-always-on;
 	};
         
@@ -829,6 +838,41 @@
 	};
 };
 
+&i2c3 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <475>;
+	i2c-scl-falling-time-ns = <26>;
+/*
+	fusb0: fusb30x@22 {
+		compatible = "fairchild,fusb302";
+		reg = <0x22>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fusb0_int>;
+		int-n-gpios = <&gpio0 RK_PA4 GPIO_ACTIVE_HIGH>;
+		vbus-5v-gpios = <&gpio2 RK_PD2 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+*/
+};
+
+&i2c4 {
+	status = "okay";
+	icm20608@68 {
+		status = "okay";
+		compatible = "invensense,icm20608";
+		reg = <0x68>;
+		irq-gpio = <&gpio2 RK_PA0 IRQ_TYPE_EDGE_RISING>;
+		mpu-int_config = <0x10>;
+		mpu-level_shifter = <0>;
+		mpu-orientation = <0 1 0 1 0 0 0 0 1>;
+		orientation-x= <1>;
+		orientation-y= <0>;
+		orientation-z= <0>;
+		mpu-debug = <1>;
+	};
+};
+
+
 &io_domains {
 	status = "okay";
 
@@ -1008,7 +1052,6 @@
 	};
 };
 
-
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_xfer &uart0_cts>;
@@ -1027,7 +1070,40 @@
 	status = "okay";
 };
 
+&usb_host1_ehci {
+	status = "okay";
+};
+
+&usb_host1_ohci {
+	status = "okay";
+};
+
+&usbdrd3_0 {
+	status = "okay";
+	//extcon = <&fusb0>;
+};
+
+&usbdrd3_1 {
+	status = "okay";
+};
+
 &usbdrd_dwc3_0 {
+	status = "okay";
+};
+
+&usbdrd_dwc3_1 {
+	status = "okay";
+	//dr_mode = "host";
+        //phy-supply = <&vcc5v_typec1_host>;
+};
+
+
+&tcphy0 {
+	//extcon = <&fusb0>;
+	status = "okay";
+};
+
+&tcphy1 {
 	status = "okay";
 };
 
@@ -1058,6 +1134,12 @@
 	buttons {
 		pwrbtn: pwrbtn {
 			rockchip,pins = <0 5 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	fusb30x {
+		fusb0_int: fusb0-int {
+			rockchip,pins = <0 RK_PA4 RK_FUNC_GPIO &pcfg_pull_up>;
 		};
 	};
 
@@ -1128,7 +1210,13 @@
 
                 host2_vbus_drv: host2_vbus_drv {
 			rockchip,pins =
-				<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;//,<2 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>
+				<2 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
+
+                typec1_vbus_drv: typec1_vbus_drv {
+			rockchip,pins =
+				<2 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
 	};
 };

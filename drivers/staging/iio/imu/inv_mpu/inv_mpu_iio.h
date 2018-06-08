@@ -94,6 +94,7 @@ enum inv_devices {
 	INV_MPU9250,
 	INV_MPU6XXX,
 	INV_MPU6515,
+	INV_ICM20608,
 	INV_NUM_PARTS
 };
 

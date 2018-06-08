@@ -276,8 +276,8 @@ static inline bool iio_channel_has_info(const struct iio_chan_spec *chan,
 	.scan_index = _si,						\
 	.scan_type = {							\
 		.sign = 's',						\
-		.realbits = 64,					\
-		.storagebits = 64,					\
+		.realbits = 128,					\
+		.storagebits = 128,					\
 		},							\
 }
 

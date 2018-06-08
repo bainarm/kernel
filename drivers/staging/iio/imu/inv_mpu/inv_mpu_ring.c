@@ -732,6 +732,7 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 	u64 *tmp;
 	int source, i;
 	struct inv_chip_config_s *conf;
+	struct timeval tv;
 
 	conf = &st->chip_config;
 	ind = 0;
@@ -833,7 +834,10 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 		ind += BYTES_PER_SENSOR;
 	}
 	tmp = (u64 *)buf;
-	tmp[DIV_ROUND_UP(ind, 8)] = t;
+	// tmp[DIV_ROUND_UP(ind, 8)] = t;
+
+	tv = ns_to_timeval(t);
+	memcpy(tmp + DIV_ROUND_UP(ind, 8), &tv, sizeof(tv));
 
 	if (ind > 0) {
 #ifdef INV_KERNEL_3_10

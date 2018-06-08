@@ -74,7 +74,9 @@ static const struct inv_hw_s hw_info[INV_NUM_PARTS] = {
 	{118, "MPU9150"},
 	{119, "MPU6500"},
 	{118, "MPU9250"},
+	{118, "MPU6XXX"},
 	{128, "MPU6515"},
+	{126, "ICM20608"},
 };
 
 /* define INV_REG_NUM_MAX the max register unmbers of all sensor type */
@@ -1540,6 +1542,12 @@ static const struct attribute *inv_gyro_attributes[] = {
 #endif
 };
 
+static const struct attribute *inv_icm20608_attributes[] = {
+	&iio_dev_attr_accl_enable.dev_attr.attr,
+	&iio_dev_attr_accl_matrix.dev_attr.attr,
+
+};
+
 static const struct attribute *inv_mpu6050_attributes[] = {
 	&dev_attr_event_display_orientation.attr,
 	&dev_attr_event_smd.attr,
@@ -1579,6 +1587,7 @@ static const struct attribute *inv_mpu3050_attributes[] = {
 static struct attribute *inv_attributes[ARRAY_SIZE(inv_gyro_attributes) +
 				ARRAY_SIZE(inv_mpu6050_attributes) +
 				ARRAY_SIZE(inv_mpu6500_attributes) +
+				ARRAY_SIZE(inv_icm20608_attributes) +
 				ARRAY_SIZE(inv_compass_attributes) + 1];
 
 static const struct attribute_group inv_attribute_group = {
@@ -1780,6 +1789,8 @@ int inv_check_chip_type(struct inv_mpu_iio_s *st, const char *name)
 		st->chip_type = INV_MPU6050;
 	else if (!strcmp(name, "mpu6515"))
 		st->chip_type = INV_MPU6500;
+	else if (!strcmp(name, "icm20608"))
+		st->chip_type = INV_ICM20608;
 	else
 		return -EPERM;
 	inv_setup_func_ptr(st);
@@ -1822,6 +1833,10 @@ int inv_check_chip_type(struct inv_mpu_iio_s *st, const char *name)
 	switch (st->chip_type) {
 	case INV_ITG3500:
 		st->num_channels = INV_CHANNEL_NUM_GYRO;
+		break;
+	case INV_ICM20608:
+		st->chip_config.has_compass = 0;
+		st->num_channels = 7;
 		break;
 	case INV_MPU6050:
 	case INV_MPU6500:
@@ -1887,6 +1902,13 @@ int inv_check_chip_type(struct inv_mpu_iio_s *st, const char *name)
 	memcpy(&inv_attributes[t_ind], inv_gyro_attributes,
 		sizeof(inv_gyro_attributes));
 	t_ind += ARRAY_SIZE(inv_gyro_attributes);
+
+	if (INV_ICM20608 == st->chip_type) {
+		memcpy(&inv_attributes[t_ind], inv_icm20608_attributes,
+			sizeof(inv_icm20608_attributes));
+		t_ind += ARRAY_SIZE(inv_icm20608_attributes);
+		inv_attributes[t_ind] = NULL;
+	}
 
 	if (INV_MPU3050 == st->chip_type && st->mpu_slave != NULL) {
 		memcpy(&inv_attributes[t_ind], inv_mpu3050_attributes,

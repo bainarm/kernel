@@ -737,6 +737,8 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 	conf = &st->chip_config;
 	ind = 0;
 
+        memset(buf, 0, sizeof(buf));
+
 	if (conf->quaternion_on & conf->dmp_on) {
 		for (i = 0; i < ARRAY_SIZE(q); i++) {
 			q[i] = be32_to_cpup((__be32 *)(&data[ind + i * 4]));

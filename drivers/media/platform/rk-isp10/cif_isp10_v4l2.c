@@ -1088,15 +1088,25 @@ static int cif_isp10_v4l2_release(struct file *file)
 	return ret;
 }
 
-/*
+static int cifisp10_meta_mmap;
+module_param_named(meta_mmap, cifisp10_meta_mmap, int, 0644);
+MODULE_PARM_DESC(meta_mmap, "Meta mmap onoff (0-1)");
 static unsigned int cif_isp10_v4l2_poll(
 	struct file *file,
 	struct poll_table_struct *wait)
 {
-	struct cif_isp10_v4l2_fh *fh = to_fh(file);
-	int ret = 0;
-	struct videobuf_queue *queue = to_videobuf_queue(file);
-	unsigned long req_events = poll_requested_events(wait);
+	struct cif_isp10_v4l2_fh *fh;
+	int ret;
+	struct vb2_queue *queue;
+	unsigned long req_events;
+
+	if (!cifisp10_meta_mmap)
+		return vb2_fop_poll(file, wait);
+
+	ret = 0;
+	fh = to_fh(file);
+	queue = to_vb2_queue(file);
+	req_events = poll_requested_events(wait);
 
 	cif_isp10_pltfrm_pr_dbg(NULL, "%s\n",
 		cif_isp10_v4l2_buf_type_string(queue->type));
@@ -1109,19 +1119,19 @@ static unsigned int cif_isp10_v4l2_poll(
 	if (!(req_events & (POLLIN | POLLOUT | POLLRDNORM)))
 		return ret;
 
-	ret |= videobuf_poll_stream(file, queue, wait);
+	//ret |= videobuf_poll_stream(file, queue, wait);
+	ret |= vb2_fop_poll(file, wait);
 	if (ret & POLLERR) {
 		cif_isp10_pltfrm_pr_err(NULL,
 			"videobuf_poll_stream failed with error 0x%x\n", ret);
 	}
 	return ret;
 }
-*/
+
 
 /*
  * VMA operations.
  */
-/*
 static void cif_isp10_v4l2_vm_open(struct vm_area_struct *vma)
 {
 	struct cif_isp10_metadata_s *metadata =
@@ -1145,10 +1155,16 @@ static const struct vm_operations_struct cif_isp10_vm_ops = {
 
 int cif_isp10_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	struct videobuf_queue *queue = to_videobuf_queue(file);
-	struct cif_isp10_device *dev = to_cif_isp10_device(queue);
-	enum cif_isp10_stream_id strm = to_stream_id(file);
+	struct vb2_queue *queue;
+	struct cif_isp10_device *dev;
+	enum cif_isp10_stream_id strm;
 	int retval;
+	if (!cifisp10_meta_mmap)
+		return vb2_fop_mmap(file, vma);
+
+	queue = to_vb2_queue(file);
+	dev = to_cif_isp10_device(queue);
+	strm = to_stream_id(file);
 
 	retval = cif_isp10_mmap(dev, strm, vma);
 	if (retval < 0)
@@ -1161,7 +1177,6 @@ int cif_isp10_v4l2_mmap(struct file *file, struct vm_area_struct *vma)
 done:
 	return retval;
 }
-*/
 
 const struct v4l2_file_operations cif_isp10_v4l2_fops = {
 	.open = cif_isp10_v4l2_open,
@@ -1170,10 +1185,8 @@ const struct v4l2_file_operations cif_isp10_v4l2_fops = {
 	.compat_ioctl32 = video_ioctl2,
 #endif
 	.release = cif_isp10_v4l2_release,
-	//.poll = cif_isp10_v4l2_poll,
-	//.mmap = cif_isp10_v4l2_mmap,
-	.poll = vb2_fop_poll,
-	.mmap = vb2_fop_mmap,
+	.poll = cif_isp10_v4l2_poll,
+	.mmap = cif_isp10_v4l2_mmap,
 };
 
 /*TBD: clean up code below this line******************************************/
@@ -1266,12 +1279,16 @@ static void cif_isp10_v4l2_requeue_bufs(
 			to_cif_isp10_device(q), stream_id, ispbuf))) {
 			spin_lock(&dev->vbreq_lock);
 			if ((buf->state == VB2_BUF_STATE_QUEUED) ||
-			    (buf->state == VB2_BUF_STATE_ACTIVE))
+			    (buf->state == VB2_BUF_STATE_DONE)){
 				buf->state = VB2_BUF_STATE_ACTIVE;
-			else
+				atomic_inc(&q->owned_by_drv_count);
+			} else if (buf->state == VB2_BUF_STATE_ACTIVE) {
+				/* nothing */
+			} else {
 				cif_isp10_pltfrm_pr_err(NULL,
 					"skip state change for buf: %d, state: %d\n",
 					buf->index, buf->state);
+                        }
 			spin_unlock(&dev->vbreq_lock);
 		} else {
 			cif_isp10_pltfrm_pr_err(NULL,

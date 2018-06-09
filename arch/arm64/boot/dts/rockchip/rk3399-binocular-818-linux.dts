@@ -1108,7 +1108,7 @@
 };
 
 &vpu {
-	status = "okay";
+	status = "disabled";
 	/* 0 means ion, 1 means drm */
 	//allocator = <0>;
 };

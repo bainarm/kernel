@@ -81,9 +81,11 @@
 #define OV9750_V_WIN_OFF_HIGH_REG 0x3812
 #define OV9750_V_WIN_OFF_LOW_REG 0x3813
 
+static int cam_num;
 static struct ov_camera_module ov9750[2];
 
-#define FPS30
+/* this for dual sensor frame sync */
+#define DUAL_SYNC
 
 /* ======================================================================== */
 /* Base sensor configs */
@@ -131,8 +133,8 @@ static struct ov_camera_module_reg ov9750_init_tab_1280_960_60fps[] = {
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3106, 0x15},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3107, 0x01},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3500, 0x00},
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3501, 0x0a},
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3502, 0x00},
+{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3501, 0x38},
+{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3502, 0x40},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3503, 0x08},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3504, 0x03},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3505, 0x83},
@@ -210,17 +212,10 @@ static struct ov_camera_module_reg ov9750_init_tab_1280_960_60fps[] = {
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3809, 0x00},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380a, 0x03},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380b, 0xc0},
-#ifdef FPS30
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380c, 0x05},
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380d, 0x50},
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380e, 0x04},
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380f, 0x98},
-#else
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380c, 0x03},//HTS 60fps 0x032a /50fps 0x3cc
+{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380c, 0x03},//HTS
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380d, 0x2a},
-{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380e, 0x03},//VTS 0x03dc 988
+{OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380e, 0x03},//VTS
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x380f, 0xdc},
-#endif
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3810, 0x00},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3811, 0x08},
 {OV_CAMERA_MODULE_REG_TYPE_DATA, 0x3812, 0x00},
@@ -339,11 +334,7 @@ static struct ov_camera_module_config ov9750_configs[] = {
 		.frm_intrvl = {
 			.interval = {
 				.numerator = 1,
-#ifdef FPS30
-				.denominator = 30
-#else
 				.denominator = 60
-#endif
 			}
 		},
 		.auto_exp_enabled = false,
@@ -351,8 +342,7 @@ static struct ov_camera_module_config ov9750_configs[] = {
 		.auto_wb_enabled = false,
 		.reg_table = (void *)ov9750_init_tab_1280_960_60fps,
 		.reg_table_num_entries =
-			sizeof(ov9750_init_tab_1280_960_60fps) /
-			sizeof(ov9750_init_tab_1280_960_60fps[0]),
+			ARRAY_SIZE(ov9750_init_tab_1280_960_60fps),
 		.v_blanking_time_us = 3078,
 		PLTFRM_CAM_ITF_MIPI_CFG(0, 2, 800, OV9750_EXT_CLK)
  	}
@@ -462,10 +452,37 @@ static int OV9750_auto_adjust_fps(struct ov_camera_module *cam_mod,
 		ov_camera_module_pr_err(cam_mod,
 				"failed with error (%d)\n", ret);
 	else
-		ov_camera_module_pr_debug(cam_mod,
+		ov_camera_module_pr_info(cam_mod,
 			"updated vts = 0x%x,vts_min=0x%x\n",
 			vts, cam_mod->vts_min);
 
+	return ret;
+}
+
+static int ov9750_set_vts(struct ov_camera_module *cam_mod,
+	u32 vts)
+{
+	int ret = 0;
+
+	if (vts <= cam_mod->vts_min)
+		return ret;
+
+	ret = ov_camera_module_write_reg(cam_mod,
+		OV9750_TIMING_VTS_LOW_REG,
+		vts & 0xFF);
+	ret |= ov_camera_module_write_reg(cam_mod,
+		OV9750_TIMING_VTS_HIGH_REG,
+		(vts >> 8) & 0x0F);
+
+	if (IS_ERR_VALUE(ret)) {
+		ov_camera_module_pr_err(cam_mod,
+			"failed with error (%d)\n", ret);
+	} else {
+		ov_camera_module_pr_info(cam_mod,
+			"updated vts = 0x%x,vts_min=0x%x\n",
+			vts, cam_mod->vts_min);
+		cam_mod->vts_cur = vts;
+	}
 	return ret;
 }
 
@@ -519,6 +536,10 @@ static int ov9750_write_aec(struct ov_camera_module *cam_mod)
 		ret |= ov_camera_module_write_reg(cam_mod,
 			OV9750_AEC_PK_LONG_EXPO_1ST_REG,
 			OV9750_FETCH_1ST_BYTE_EXP(exp_time));
+
+		if (!cam_mod->auto_adjust_fps)
+			ret |= ov9750_set_vts(cam_mod, cam_mod->exp_config.vts_value);
+
 		if (cam_mod->state == OV_CAMERA_MODULE_STREAMING) {
 			ret = ov_camera_module_write_reg(cam_mod,
 				OV9750_AEC_GROUP_UPDATE_ADDRESS,
@@ -562,12 +583,12 @@ static int ov9750_g_ctrl(struct ov_camera_module *cam_mod, u32 ctrl_id)
 
 static int ov9750_filltimings(struct ov_camera_module_custom_config *custom)
 {
-	int i, j;
+	u32 i, j;
 	u32 win_h_off = 0, win_v_off = 0;
 	struct ov_camera_module_config *config;
 	struct ov_camera_module_timings *timings;
 	struct ov_camera_module_reg *reg_table;
-	int reg_table_num_entries;
+	u32 reg_table_num_entries;
 
 	for (i = 0; i < custom->num_configs; i++) {
 		config = &custom->configs[i];
@@ -701,10 +722,6 @@ static int ov9750_filltimings(struct ov_camera_module_custom_config *custom)
 			config->frm_intrvl.interval.denominator *
 			timings->frame_length_lines *
 			timings->line_length_pck;
-		printk("cyw pclk:%d hts:%d vts:%d\n",
-			timings->vt_pix_clk_freq_hz,
-			timings->line_length_pck,
-			timings->frame_length_lines);
 
 		timings->coarse_integration_time_min =
 			OV9750_COARSE_INTG_TIME_MIN;
@@ -802,7 +819,7 @@ static int ov9750_s_ext_ctrls(struct ov_camera_module *cam_mod,
 	/* Handles only exposure and gain together special case. */
 	if (ctrls->count == 1)
 		ret = ov9750_s_ctrl(cam_mod, ctrls->ctrls[0].id);
-	else if ((ctrls->count == 3) &&
+	else if ((ctrls->count >= 3) &&
 		(ctrls->ctrls[0].id == V4L2_CID_GAIN ||
 		ctrls->ctrls[0].id == V4L2_CID_EXPOSURE ||
 		ctrls->ctrls[1].id == V4L2_CID_GAIN ||
@@ -823,8 +840,28 @@ static int ov9750_s_ext_ctrls(struct ov_camera_module *cam_mod,
 static int ov9750_start_streaming(struct ov_camera_module *cam_mod)
 {
 	int ret = 0;
+	struct i2c_client *client = v4l2_get_subdevdata(&cam_mod->sd);
+
 	ov_camera_module_pr_info(cam_mod,
-		"active config=%s\n", cam_mod->active_config->name);
+		"i2c:0x%x active config=%s\n",
+		client->addr, cam_mod->active_config->name);
+
+#ifdef DUAL_SYNC
+	if (client->addr == 0x36) {//master
+		ov_camera_module_write_reg(cam_mod, 0x3002, 0xa1);
+		ov_camera_module_write_reg(cam_mod, 0x3007, 0x02);
+		ov_camera_module_write_reg(cam_mod, 0x3816, 0x00);
+		ov_camera_module_write_reg(cam_mod, 0x3817, 0x00);
+		ov_camera_module_write_reg(cam_mod, 0x3818, 0x00);
+		ov_camera_module_write_reg(cam_mod, 0x3819, 0x01);
+		ov_camera_module_write_reg(cam_mod, 0x3823, 0x00);
+		ov_camera_module_write_reg(cam_mod, 0x3824, 0x00);
+	} else {//slave
+		ov_camera_module_write_reg(cam_mod, 0x3002, 0x21);
+		ov_camera_module_write_reg(cam_mod, 0x3823, 0x48);
+		ov_camera_module_write_reg(cam_mod, 0x3824, 0x11);
+	}
+#endif
 
 	ret = OV9750_g_VTS(cam_mod, &cam_mod->vts_min);
 	if (IS_ERR_VALUE(ret))
@@ -877,11 +914,11 @@ static int ov9750_check_camera_id(struct ov_camera_module *cam_mod)
 		goto err;
 	}
 
-	if ((pidh == OV9750_PIDH_MAGIC) && (pidl == OV9750_PIDL_MAGIC))
+	if (pidh == OV9750_PIDH_MAGIC && pidl == OV9750_PIDL_MAGIC) {
 		ov_camera_module_pr_info(cam_mod,
 			"successfully detected camera ID 0x%02x%02x\n",
 			pidh, pidl);
-	else {
+	} else {
 		ov_camera_module_pr_err(cam_mod,
 			"wrong camera ID, expected 0x%02x%02x, detected 0x%02x%02x\n",
 			OV9750_PIDH_MAGIC, OV9750_PIDL_MAGIC, pidh, pidl);
@@ -942,8 +979,8 @@ static int ov9750_probe(
 	struct i2c_client *client,
 	const struct i2c_device_id *id)
 {
-	static int cam_num = 0;
-	dev_info(&client->dev, "probing cam_num:%d 0x%x...\n", cam_num, client->addr);
+	dev_info(&client->dev, "probing cam_num:%d 0x%x\n",
+		cam_num, client->addr);
 
 	ov9750_filltimings(&ov9750_custom_config);
 	v4l2_i2c_subdev_init(&ov9750[cam_num].sd, client,
@@ -989,7 +1026,6 @@ MODULE_DEVICE_TABLE(i2c, ov9750_id);
 static struct i2c_driver ov9750_i2c_driver = {
 	.driver = {
 		.name = OV9750_DRIVER_NAME,
-		.owner = THIS_MODULE,
 		.of_match_table = ov9750_of_match
 	},
 	.probe = ov9750_probe,

@@ -2182,7 +2182,10 @@ static int cif_isp10_config_mi_mp(
 			dev->config.base_addr + CIF_MI_XTD_FORMAT_CTRL);
 	}
 
-	mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_CTRL) |
+	//mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_CTRL) |
+	mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_CTRL);
+	mi_ctrl &= ~(CIF_MI_CTRL_MP_WRITE_FMT(3));
+	mi_ctrl = mi_ctrl |
 		CIF_MI_CTRL_MP_WRITE_FMT(writeformat) |
 		CIF_MI_CTRL_BURST_LEN_LUM_16 |
 		CIF_MI_CTRL_BURST_LEN_CHROM_16 |
@@ -2423,7 +2426,10 @@ static int cif_isp10_config_mi_sp(
 			dev->config.base_addr + CIF_MI_XTD_FORMAT_CTRL);
 	}
 
-	mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_CTRL) |
+	//mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_CTRL) |
+	mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_CTRL);
+	mi_ctrl &= ~(CIF_MI_CTRL_SP_WRITE_FMT(3));
+	mi_ctrl = mi_ctrl |
 		CIF_MI_CTRL_SP_WRITE_FMT(writeformat) |
 		input_format |
 		output_format |
@@ -2562,7 +2568,10 @@ static int cif_isp10_config_mi_dma(
 	cif_iowrite32_verify(llength,
 		dev->config.base_addr + CIF_MI_DMA_Y_LLENGTH, ~0x3);
 
-	mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_DMA_CTRL) |
+	//mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_DMA_CTRL) |
+	mi_ctrl = cif_ioread32(dev->config.base_addr + CIF_MI_DMA_CTRL);
+	mi_ctrl &= ~(CIF_MI_DMA_CTRL_READ_FMT(3) & CIF_MI_DMA_CTRL_FMT_YUV444);
+	mi_ctrl = mi_ctrl |
 		CIF_MI_DMA_CTRL_READ_FMT(readformat) |
 		output_format |
 		CIF_MI_DMA_CTRL_BURST_LEN_LUM_64 |
@@ -4295,7 +4304,7 @@ static int cif_isp10_mi_frame_end(
 			bool wake_now;
 
 			vb2_buf = &stream->curr_buf->vb.vb2_buf;
-			v4l2_get_timestamp(&stream->curr_buf->vb.timestamp);
+                        v4l2_get_timestamp(&stream->curr_buf->vb.timestamp);
 			vb2_buffer_done(vb2_buf, VB2_BUF_STATE_DONE);
 			wake_now = false;
 
@@ -4915,11 +4924,23 @@ static int cif_isp10_start(
 		cif_isp10_img_src_ioctl(dev->img_src,
 			RK_VIDIOC_SENSOR_MODE_DATA,
 			&dev->img_src_exps.data[0].data);
-		cif_isp10_img_src_ioctl(dev->img_src,
-			RK_VIDIOC_SENSOR_MODE_DATA,
-			&dev->img_src_exps.data[1].data);
 		dev->img_src_exps.data[0].v_frame_id = 0;
 		dev->img_src_exps.data[1].v_frame_id = 0;
+		dev->img_src_exps.data[0].data.isp_input_width =
+			dev->config.isp_config.input->defrect.width;
+		dev->img_src_exps.data[0].data.isp_input_height =
+			dev->config.isp_config.input->defrect.height;
+		dev->img_src_exps.data[0].data.isp_input_horizontal_start =
+			dev->config.isp_config.input->defrect.left;
+		dev->img_src_exps.data[0].data.isp_input_vertical_start =
+			dev->config.isp_config.input->defrect.top;
+
+		dev->img_src_exps.data[0].data.isp_output_width =
+			dev->config.isp_config.output.width;
+		dev->img_src_exps.data[0].data.isp_output_height =
+			dev->config.isp_config.output.height;
+		memcpy(&dev->img_src_exps.data[1], &dev->img_src_exps.data[0],
+			sizeof(dev->img_src_exps.data[0]));
 		mutex_unlock(&dev->img_src_exps.mutex);
 
 		cif_isp10_pltfrm_rtrace_printf(dev->dev,
@@ -5255,6 +5276,20 @@ static void cif_isp10_vs_work(struct work_struct *work)
 		cif_isp10_img_src_ioctl(dev->img_src,
 			RK_VIDIOC_SENSOR_MODE_DATA,
 			&new_data->data);
+		new_data->data.isp_input_width =
+			dev->config.isp_config.input->defrect.width;
+		new_data->data.isp_input_height =
+			dev->config.isp_config.input->defrect.height;
+		new_data->data.isp_input_horizontal_start =
+			dev->config.isp_config.input->defrect.left;
+		new_data->data.isp_input_vertical_start =
+			dev->config.isp_config.input->defrect.top;
+
+		new_data->data.isp_output_width =
+			dev->config.isp_config.output.width;
+		new_data->data.isp_output_height =
+			dev->config.isp_config.output.height;
+
 		mutex_unlock(&dev->img_src_exps.mutex);
 
 		/*
@@ -5281,6 +5316,7 @@ static void cif_isp10_vs_work(struct work_struct *work)
 	kfree(vs_wk);
 	vs_wk = NULL;
 }
+
 
 /* Public Functions */
 void cif_isp10_sensor_mode_data_sync(
@@ -5998,6 +6034,17 @@ failed:
 	return retval;
 }
 
+int cif_isp10_s_vcm(
+	struct cif_isp10_device *dev,
+	unsigned int id,
+	int val)
+{
+	if (dev->img_src != NULL)
+		cif_isp10_img_src_ioctl(dev->img_src,
+			PLTFRM_CIFCAM_SET_VCM_POS, &val);
+	return 0;
+}
+
 int cif_isp10_s_isp_metadata(
 	struct cif_isp10_device *dev,
 	struct cif_isp10_isp_readout_work *readout_work,
@@ -6361,7 +6408,6 @@ int cif_isp10_s_ctrl(
 	case CIF_ISP10_CID_ANALOG_GAIN:
 	case CIF_ISP10_CID_EXPOSURE_TIME:
 	case CIF_ISP10_CID_BLACK_LEVEL:
-	case CIF_ISP10_CID_FOCUS_ABSOLUTE:
 	case CIF_ISP10_CID_AUTO_N_PRESET_WHITE_BALANCE:
 	case CIF_ISP10_CID_SCENE_MODE:
 	case CIF_ISP10_CID_AUTO_FPS:
@@ -6369,6 +6415,8 @@ int cif_isp10_s_ctrl(
 	case CIF_ISP10_CID_VFLIP:
 		return cif_isp10_img_src_s_ctrl(dev->img_src,
 			id, val);
+	case CIF_ISP10_CID_FOCUS_ABSOLUTE:
+		return cif_isp10_s_vcm(dev, id, val);
 	default:
 		cif_isp10_pltfrm_pr_err(dev->dev,
 			"unknown/unsupported control %d\n", id);

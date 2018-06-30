@@ -267,7 +267,7 @@
 			opp-microvolt-L2 = <800000>;
 			opp-microvolt-L3 = <800000>;
 		};
-		opp-600000000 {
+	/*	opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
 			opp-microvolt = <925000>;
 			opp-microvolt-L0 = <925000>;
@@ -282,13 +282,13 @@
 			opp-microvolt-L1 = <1075000>;
 			opp-microvolt-L2 = <1050000>;
 			opp-microvolt-L3 = <1025000>;
-		};
+		};*/
 	};
 
 	dmc_opp_table: opp-table3 {
 		compatible = "operating-points-v2";
 
-		opp-200000000 {
+	/*	opp-200000000 {
 			opp-hz = /bits/ 64 <200000000>;
 			opp-microvolt = <900000>;
 		};
@@ -307,7 +307,7 @@
 		opp-600000000 {
 			opp-hz = /bits/ 64 <600000000>;
 			opp-microvolt = <900000>;
-		};
+		};*/
 		opp-800000000 {
 			opp-hz = /bits/ 64 <800000000>;
 			opp-microvolt = <900000>;

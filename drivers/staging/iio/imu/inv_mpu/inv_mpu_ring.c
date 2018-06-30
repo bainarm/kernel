@@ -723,7 +723,7 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 					u8 *data, s64 t)
 {
 	struct inv_mpu_iio_s *st = iio_priv(indio_dev);
-	short g[THREE_AXIS], a[THREE_AXIS], c[THREE_AXIS];
+	short g[THREE_AXIS], a[THREE_AXIS], c[THREE_AXIS], temperature;
 	int q[4];
 	int result, ind;
 	u32 word;
@@ -756,6 +756,12 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 						sizeof(a[i]));
 		}
 		ind += BYTES_PER_SENSOR;
+	}
+
+	if (st->chip_type == INV_ICM20608) {
+		temperature = be16_to_cpup((__be16 *)(&data[ind]));
+		memcpy(&buf[ind], &temperature, sizeof(temperature));
+		ind += FIFO_COUNT_BYTE;
 	}
 
 	if (conf->gyro_fifo_enable) {
@@ -837,7 +843,6 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 	}
 	tmp = (u64 *)buf;
 	// tmp[DIV_ROUND_UP(ind, 8)] = t;
-
 	tv = ns_to_timeval(t);
 	memcpy(tmp + DIV_ROUND_UP(ind, 8), &tv, sizeof(tv));
 
@@ -921,7 +926,7 @@ irqreturn_t inv_read_fifo(int irq, void *dev_id)
 	struct iio_dev *indio_dev = iio_priv_to_dev(st);
 	size_t bytes_per_datum;
 	int result;
-	u8 data[BYTES_FOR_DMP + QUATERNION_BYTES];
+	u8 data[BYTES_FOR_DMP + QUATERNION_BYTES] = {0};
 	u16 fifo_count;
 	u32 copied;
 	s64 timestamp;

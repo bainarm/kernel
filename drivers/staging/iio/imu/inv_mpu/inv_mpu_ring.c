@@ -728,7 +728,7 @@ static int inv_report_gyro_accl_compass(struct iio_dev *indio_dev,
 	int result, ind;
 	u32 word;
 	u8 d[8], compass_divider;
-	u8 buf[64];
+	u8 buf[64] = {0};
 	u64 *tmp;
 	int source, i;
 	struct inv_chip_config_s *conf;
@@ -897,6 +897,9 @@ static int get_bytes_per_datum(struct inv_mpu_iio_s *st)
 		bytes_per_datum += BYTES_PER_SENSOR;
 	if (st->chip_config.gyro_fifo_enable)
 		bytes_per_datum += BYTES_PER_SENSOR;
+
+	if (st->chip_type == INV_ICM20608)
+		bytes_per_datum += 2;
 
 	return bytes_per_datum;
 }

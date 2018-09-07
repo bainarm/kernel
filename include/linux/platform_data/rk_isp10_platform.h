@@ -136,7 +136,6 @@ struct pltfrm_cam_vcm_tim {
 	struct timeval vcm_start_t;
 	struct timeval vcm_end_t;
 };
- 
 
 struct pltfrm_cam_defrect {
 	unsigned int width;

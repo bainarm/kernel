@@ -190,12 +190,12 @@ PNAME(mux_spdif_rx_src_p)	= { "clk_spdif_rx_div", "clk_spdif_rx_div50" };
 PNAME(mux_spdif_rx_p)		= { "clk_spdif_rx_src", "clk_spdif_rx_frac" };
 
 static struct rockchip_pll_clock rk3308_pll_clks[] __initdata = {
-	[apll] = PLL_BOOST(pll_rk3328, PLL_APLL, "apll", mux_pll_p,
+	[apll] = PLL(pll_rk3328, PLL_APLL, "apll", mux_pll_p,
 		     0, RK3308_PLL_CON(0),
 		     RK3308_MODE_CON, 0, 0, 0, rk3308_pll_rates),
 	[dpll] = PLL(pll_rk3328, PLL_DPLL, "dpll", mux_pll_p,
 		     0, RK3308_PLL_CON(8),
-		     RK3308_MODE_CON, 2, 1, 0, NULL),
+		     RK3308_MODE_CON, 2, 1, 0, rk3308_pll_rates),
 	[vpll0] = PLL(pll_rk3328, PLL_VPLL0, "vpll0", mux_pll_p,
 		     0, RK3308_PLL_CON(16),
 		     RK3308_MODE_CON, 4, 2, 0, rk3308_pll_rates),
@@ -899,6 +899,7 @@ static const char *const rk3308_critical_clocks[] __initconst = {
 	"pclk_peri",
 	"hclk_audio",
 	"pclk_audio",
+	"sclk_ddrc",
 };
 
 static void __iomem *rk3308_cru_base;

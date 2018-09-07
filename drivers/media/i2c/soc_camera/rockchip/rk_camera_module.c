@@ -40,6 +40,8 @@
 
 #define OF_OV_GPIO_PD "rockchip,pd-gpio"
 #define OF_OV_GPIO_PWR "rockchip,pwr-gpio"
+#define OF_OV_GPIO_PWR_2ND "rockchip,pwr-2nd-gpio"
+#define OF_OV_GPIO_PWR_3RD "rockchip,pwr-3rd-gpio"
 #define OF_OV_GPIO_FLASH "rockchip,flash-gpio"
 #define OF_OV_GPIO_TORCH "rockchip,torch-gpio"
 #define OF_OV_GPIO_RESET "rockchip,rst-gpio"
@@ -73,6 +75,8 @@
 
 const char *PLTFRM_CAMERA_MODULE_PIN_PD = OF_OV_GPIO_PD;
 const char *PLTFRM_CAMERA_MODULE_PIN_PWR = OF_OV_GPIO_PWR;
+const char *PLTFRM_CAMERA_MODULE_PIN_PWR_2ND = OF_OV_GPIO_PWR_2ND;
+const char *PLTFRM_CAMERA_MODULE_PIN_PWR_3RD = OF_OV_GPIO_PWR_3RD;
 const char *PLTFRM_CAMERA_MODULE_PIN_FLASH = OF_OV_GPIO_FLASH;
 const char *PLTFRM_CAMERA_MODULE_PIN_TORCH = OF_OV_GPIO_TORCH;
 const char *PLTFRM_CAMERA_MODULE_PIN_RESET = OF_OV_GPIO_RESET;
@@ -80,6 +84,20 @@ const char *PLTFRM_CAMERA_MODULE_PIN_RESET = OF_OV_GPIO_RESET;
 #define I2C_M_WR 0
 #define I2C_MSG_MAX 300
 #define I2C_DATA_MAX (I2C_MSG_MAX * 3)
+#define CSI2_DT_YUV420_8b      (0x18)
+#define CSI2_DT_YUV420_10b     (0x19)
+#define CSI2_DT_YUV422_8b      (0x1E)
+#define CSI2_DT_YUV422_10b     (0x1F)
+#define CSI2_DT_RGB444         (0x20)
+#define CSI2_DT_RGB555         (0x21)
+#define CSI2_DT_RGB565         (0x22)
+#define CSI2_DT_RGB666         (0x23)
+#define CSI2_DT_RGB888         (0x24)
+#define CSI2_DT_RAW6           (0x28)
+#define CSI2_DT_RAW7           (0x29)
+#define CSI2_DT_RAW8           (0x2A)
+#define CSI2_DT_RAW10          (0x2B)
+#define CSI2_DT_RAW12          (0x2C)
 
 struct pltfrm_camera_module_gpio {
 	int pltfrm_gpio;
@@ -138,7 +156,7 @@ struct pltfrm_camera_module_itf {
 };
 
 struct pltfrm_camera_module_data {
-	struct pltfrm_camera_module_gpio gpios[6];
+	struct pltfrm_camera_module_gpio gpios[8];
 	struct pinctrl *pinctrl;
 	struct pinctrl_state *pins_default;
 	struct pinctrl_state *pins_sleep;
@@ -170,7 +188,7 @@ static int pltfrm_camera_module_set_pinctrl_state(
 
 	if (!IS_ERR_OR_NULL(state)) {
 		ret = pinctrl_select_state(pdata->pinctrl, state);
-		if (IS_ERR_VALUE(ret))
+		if (ret < 0)
 			pltfrm_camera_module_pr_debug(sd,
 				"could not set pins\n");
 	}
@@ -185,10 +203,10 @@ static int pltfrm_camera_module_init_gpio(
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct pltfrm_camera_module_data *pdata =
 		dev_get_platdata(&client->dev);
-	int i = 0;
+	unsigned int i = 0;
 
 	ret = pltfrm_camera_module_set_pinctrl_state(sd, pdata->pins_default);
-	if (IS_ERR_VALUE(ret))
+	if (ret < 0)
 		goto err;
 
 	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++) {
@@ -217,7 +235,7 @@ static int pltfrm_camera_module_init_gpio(
 				pdata->gpios[i].pltfrm_gpio,
 				GPIOF_DIR_OUT,
 				pdata->gpios[i].label);
-			if (IS_ERR_VALUE(ret)) {
+			if (ret) {
 				if ((pdata->gpios[i].label ==
 					PLTFRM_CAMERA_MODULE_PIN_RESET) ||
 					(pdata->gpios[i].label ==
@@ -264,7 +282,7 @@ err:
 static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 	struct v4l2_subdev *sd)
 {
-	int i,ret = 0;
+	int ret = 0;
 	int elem_size, elem_index;
 	const char *str = "";
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -288,18 +306,20 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 
 	ret = of_property_read_string(np, OF_CAMERA_MODULE_MCLK_NAME, &str);
 	if (ret) {
-		pltfrm_camera_module_pr_warn(sd,
+		pltfrm_camera_module_pr_err(sd,
 			"cannot not get camera-module-mclk-name property of node %s\n",
 			np->name);
-	} else {
-		pdata->mclk = devm_clk_get(&client->dev, str);
-		if (IS_ERR_OR_NULL(pdata->mclk)) {
-			pltfrm_camera_module_pr_err(sd,
-				"cannot not get %s property of node %s\n",
-				str, np->name);
-			ret = -ENODEV;
-			goto err;
-		}
+		ret = -ENODEV;
+		goto err;
+	}
+
+	pdata->mclk = devm_clk_get(&client->dev, str);
+	if (IS_ERR_OR_NULL(pdata->mclk)) {
+		pltfrm_camera_module_pr_err(sd,
+			"cannot not get %s property of node %s\n",
+			str, np->name);
+		ret = -ENODEV;
+		goto err;
 	}
 
 	ret = of_property_read_string(np,
@@ -356,6 +376,7 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 				pltfrm_dev_string(pdata->fl_ctrl.flsh_ctrl));
 		}
 	}
+
 	pdata->info.af_support = 0;
 	af_ctrl_node = of_parse_phandle(np, "rockchip,af-ctrl", 0);
 	if (!IS_ERR_OR_NULL(af_ctrl_node)) {
@@ -404,8 +425,7 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 		np,
 		OF_CAMERA_MODULE_REGULATORS,
 		NULL);
-	if (!IS_ERR_VALUE(elem_size) &&
-		!IS_ERR_OR_NULL(prop)) {
+	if (elem_size > 0 && !IS_ERR_OR_NULL(prop)) {
 		struct pltfrm_camera_module_regulator *regulator;
 
 		pdata->regulators.regulator = devm_kzalloc(&client->dev,
@@ -445,9 +465,6 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 			regulator++;
 		} while (--elem_size);
 	}
-	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++)
-		pdata->gpios[i].pltfrm_gpio = -1;
-
 	pdata->gpios[0].label = PLTFRM_CAMERA_MODULE_PIN_PD;
 	pdata->gpios[0].pltfrm_gpio = of_get_named_gpio_flags(
 		np,
@@ -462,32 +479,46 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 		0,
 		&pdata->gpios[1].active_low);
 
-	pdata->gpios[2].label = PLTFRM_CAMERA_MODULE_PIN_FLASH;
+	pdata->gpios[2].label = PLTFRM_CAMERA_MODULE_PIN_PWR_2ND;
 	pdata->gpios[2].pltfrm_gpio = of_get_named_gpio_flags(
 		np,
 		pdata->gpios[2].label,
 		0,
 		&pdata->gpios[2].active_low);
 
-	/*set fl_ctrl  flash reference*/
-	pdata->fl_ctrl.fl_flash = &pdata->gpios[2];
-
-	pdata->gpios[3].label = PLTFRM_CAMERA_MODULE_PIN_TORCH;
+	pdata->gpios[3].label = PLTFRM_CAMERA_MODULE_PIN_PWR_3RD;
 	pdata->gpios[3].pltfrm_gpio = of_get_named_gpio_flags(
 		np,
 		pdata->gpios[3].label,
 		0,
 		&pdata->gpios[3].active_low);
 
-	/*set fl_ctrl torch reference*/
-	pdata->fl_ctrl.fl_torch = &pdata->gpios[3];
-
-	pdata->gpios[4].label = PLTFRM_CAMERA_MODULE_PIN_RESET;
+	pdata->gpios[4].label = PLTFRM_CAMERA_MODULE_PIN_FLASH;
 	pdata->gpios[4].pltfrm_gpio = of_get_named_gpio_flags(
 		np,
 		pdata->gpios[4].label,
 		0,
 		&pdata->gpios[4].active_low);
+
+	/*set fl_ctrl  flash reference*/
+	pdata->fl_ctrl.fl_flash = &pdata->gpios[4];
+
+	pdata->gpios[5].label = PLTFRM_CAMERA_MODULE_PIN_TORCH;
+	pdata->gpios[5].pltfrm_gpio = of_get_named_gpio_flags(
+		np,
+		pdata->gpios[5].label,
+		0,
+		&pdata->gpios[5].active_low);
+
+	/*set fl_ctrl torch reference*/
+	pdata->fl_ctrl.fl_torch = &pdata->gpios[5];
+
+	pdata->gpios[6].label = PLTFRM_CAMERA_MODULE_PIN_RESET;
+	pdata->gpios[6].pltfrm_gpio = of_get_named_gpio_flags(
+		np,
+		pdata->gpios[6].label,
+		0,
+		&pdata->gpios[6].active_low);
 
 	ret = of_property_read_string(np, OF_CAMERA_MODULE_NAME,
 			&pdata->info.module_name);
@@ -716,7 +747,8 @@ static int pltfrm_camera_module_config_matches(
 	struct property *prop;
 	const char *of_pix_fmt;
 	bool match = true;
-	u32 min, min2, max, max2;
+	u32 min, max;
+	u32 min2 = 1, max2 = 1;
 	u32 numerator, denominator;
 
 	pltfrm_camera_module_pr_debug(sd,
@@ -747,20 +779,20 @@ static int pltfrm_camera_module_config_matches(
 		if (ret == -EINVAL) {
 			min = 0;
 			max = UINT_MAX;
-		} else if (IS_ERR_VALUE(ret)) {
+		} else if (ret) {
 			pltfrm_camera_module_pr_err(sd,
 					"malformed property 'rockchip,frm-width-range'\n");
 			goto err;
 		} else {
 			ret = of_property_read_u32_index(config,
 					"rockchip,frm-width-range", 1, &max);
-			if (IS_ERR_VALUE(ret)) {
+			if (ret) {
 				pltfrm_camera_module_pr_err(sd,
 				"malformed property 'rockchip,frm-width-range'\n");
 				goto err;
 			}
 		}
-	} else if (IS_ERR_VALUE(ret)) {
+	} else if (!ret) {
 		pltfrm_camera_module_pr_err(sd,
 				"malformed property 'rockchip,frm-width'\n");
 		goto err;
@@ -778,20 +810,20 @@ static int pltfrm_camera_module_config_matches(
 		if (ret == -EINVAL) {
 			min = 0;
 			max = UINT_MAX;
-		} else if (IS_ERR_VALUE(ret)) {
+		} else if (ret) {
 			pltfrm_camera_module_pr_err(sd,
 				"malformed property 'rockchip,frm-height-range'\n");
 			goto err;
 		} else {
 			ret = of_property_read_u32_index(config,
 					"rockchip,frm-height-range", 1, &max);
-			if (IS_ERR_VALUE(ret)) {
+			if (ret) {
 				pltfrm_camera_module_pr_err(sd,
 					"malformed property 'rockchip,frm-height-range'\n");
 				goto err;
 			}
 		}
-	} else if (IS_ERR_VALUE(ret)) {
+	} else if (!ret) {
 		pltfrm_camera_module_pr_err(sd,
 				"malformed property 'rockchip,frm-height'\n");
 		goto err;
@@ -810,7 +842,7 @@ static int pltfrm_camera_module_config_matches(
 		if (ret == -EINVAL) {
 			min = 0;
 			max = UINT_MAX;
-		} else if (IS_ERR_VALUE(ret)) {
+		} else if (ret) {
 			pltfrm_camera_module_pr_err(sd,
 					"malformed property 'rockchip,frm-interval-range'\n");
 			goto err;
@@ -821,20 +853,20 @@ static int pltfrm_camera_module_config_matches(
 				"rockchip,frm-interval-range", 2, &max);
 			ret |= of_property_read_u32_index(config,
 				"rockchip,frm-interval-range", 3, &max2);
-			if (IS_ERR_VALUE(ret)) {
+			if (ret) {
 				pltfrm_camera_module_pr_err(sd,
 					"malformed property 'rockchip,frm-interval-range'\n");
 				goto err;
 			}
 		}
-	} else if (IS_ERR_VALUE(ret)) {
+	} else if (!ret) {
 		pltfrm_camera_module_pr_err(sd,
 			"malformed property 'rockchip,frm-interval'\n");
 		goto err;
 	} else {
 		ret = of_property_read_u32_index(config,
 			"rockchip,frm-interval", 1, &min2);
-		if (IS_ERR_VALUE(ret)) {
+		if (ret) {
 			pltfrm_camera_module_pr_err(sd,
 				"malformed property 'rockchip,frm-interval'\n");
 			goto err;
@@ -885,10 +917,9 @@ static int pltfrm_camera_module_write_reglist_node(
 		}
 
 		reg_table_num_entries /= 12;
-		reg_table = (struct pltfrm_camera_module_reg *)
-			kmalloc(reg_table_num_entries *
-				sizeof(struct pltfrm_camera_module_reg),
-				GFP_KERNEL);
+		reg_table = kmalloc_array(reg_table_num_entries,
+			sizeof(struct pltfrm_camera_module_reg),
+			GFP_KERNEL);
 		if (IS_ERR_OR_NULL(reg_table)) {
 			pltfrm_camera_module_pr_err(sd,
 				"memory allocation failed\n");
@@ -914,7 +945,7 @@ static int pltfrm_camera_module_write_reglist_node(
 				config_node, "rockchip,reg-table",
 				3 * i + 2, &val);
 			reg_table[i].val = val;
-			if (IS_ERR_VALUE(ret)) {
+			if (ret) {
 				pltfrm_camera_module_pr_err(sd,
 					"error while reading property %s at index %d\n",
 					"rockchip,reg-table", i);
@@ -923,7 +954,7 @@ static int pltfrm_camera_module_write_reglist_node(
 		}
 		ret = pltfrm_camera_module_write_reglist(
 			sd, reg_table, reg_table_num_entries);
-		if (IS_ERR_VALUE(ret))
+		if (ret)
 			goto err;
 		kfree(reg_table);
 		reg_table = NULL;
@@ -1186,7 +1217,7 @@ int pltfrm_camera_module_write_reglist(
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	int ret = 0;
 	unsigned int k = 0, j = 0;
-	int i = 0;
+	unsigned int i = 0;
 	struct i2c_msg *msg;
 	unsigned char *data;
 	unsigned int max_entries = len;
@@ -1411,16 +1442,25 @@ int pltfrm_camera_module_set_pm_state(
 			PLTFRM_CAMERA_MODULE_PIN_PWR,
 			PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
 
-		//pltfrm_camera_module_set_pin_state(
-		//	sd,
-		//	PLTFRM_CAMERA_MODULE_PIN_RESET,
-		//	PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
+		pltfrm_camera_module_set_pin_state(
+			sd,
+			PLTFRM_CAMERA_MODULE_PIN_PWR_2ND,
+			PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
+
+		pltfrm_camera_module_set_pin_state(
+			sd,
+			PLTFRM_CAMERA_MODULE_PIN_PWR_3RD,
+			PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
+
+		pltfrm_camera_module_set_pin_state(
+			sd,
+			PLTFRM_CAMERA_MODULE_PIN_RESET,
+			PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
 		usleep_range(100, 300);
 		pltfrm_camera_module_set_pin_state(
 			sd,
 			PLTFRM_CAMERA_MODULE_PIN_RESET,
 			PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
-                usleep_range(100, 300);
 
 		mclk_para.io_voltage = PLTFRM_IO_1V8;
 		mclk_para.drv_strength = PLTFRM_DRV_STRENGTH_2;
@@ -1434,30 +1474,31 @@ int pltfrm_camera_module_set_pm_state(
 			ioctl,
 			PLTFRM_CIFCAM_G_ITF_CFG,
 			(void *)&itf_cfg) == 0) {
-			//clk_set_rate(pdata->mclk, itf_cfg.mclk_hz);
-                        if (!IS_ERR_OR_NULL(pdata->mclk))
-				clk_set_rate(pdata->mclk, itf_cfg.mclk_hz);
+			clk_set_rate(pdata->mclk, itf_cfg.mclk_hz);
 		} else {
 			pltfrm_camera_module_pr_err(sd,
 				"PLTFRM_CIFCAM_G_ITF_CFG failed, mclk set 24m default.\n");
-			//clk_set_rate(pdata->mclk, 24000000);
-                        if (!IS_ERR_OR_NULL(pdata->mclk))
-				clk_set_rate(pdata->mclk, 24000000);
+			clk_set_rate(pdata->mclk, 24000000);
 		}
-		//clk_prepare_enable(pdata->mclk);
-                if (!IS_ERR_OR_NULL(pdata->mclk))
-			clk_prepare_enable(pdata->mclk);
+		clk_prepare_enable(pdata->mclk);
 	} else {
-#if 0
-		//clk_disable_unprepare(pdata->mclk);
-                if (!IS_ERR_OR_NULL(pdata->mclk))
-			clk_disable_unprepare(pdata->mclk);
+		clk_disable_unprepare(pdata->mclk);
+
+		pltfrm_camera_module_set_pin_state(
+			sd,
+			PLTFRM_CAMERA_MODULE_PIN_PWR_3RD,
+			PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
+
+		pltfrm_camera_module_set_pin_state(
+			sd,
+			PLTFRM_CAMERA_MODULE_PIN_PWR_2ND,
+			PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
 
 		pltfrm_camera_module_set_pin_state(
 			sd,
 			PLTFRM_CAMERA_MODULE_PIN_PWR,
 			PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
-#endif
+
 		if (pdata->regulators.regulator) {
 			for (i = 0; i < pdata->regulators.cnt; i++) {
 				struct pltfrm_camera_module_regulator
@@ -1483,7 +1524,7 @@ int pltfrm_camera_module_set_pin_state(
 	struct pltfrm_camera_module_data *pdata =
 		dev_get_platdata(&client->dev);
 	int gpio_val;
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++) {
 		if (pin == pdata->gpios[i].label) {
@@ -1520,7 +1561,7 @@ int pltfrm_camera_module_get_pin_state(
 	struct pltfrm_camera_module_data *pdata =
 		dev_get_platdata(&client->dev);
 	int gpio_val;
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++) {
 		if (pin == pdata->gpios[i].label) {
@@ -1559,7 +1600,7 @@ int pltfrm_camera_module_s_power(
 	if (on) {
 		/* Enable clock and voltage to Secondary Camera Sensor */
 		ret = pltfrm_camera_module_set_pm_state(sd, on);
-		if (IS_ERR_VALUE(ret))
+		if (ret)
 			pltfrm_camera_module_pr_err(sd,
 				"set PM state failed (%d), could not power on camera\n",
 				ret);
@@ -1571,15 +1612,13 @@ int pltfrm_camera_module_s_power(
 				sd, pdata->pins_default);
 		}
 	} else {
-#if 0
 		/* Disable clock and voltage to Secondary Camera Sensor  */
 		ret = pltfrm_camera_module_set_pinctrl_state(
 			sd, pdata->pins_sleep);
-#endif
-		if (!IS_ERR_VALUE(ret)) {
+		if (ret >= 0) {
 			ret = pltfrm_camera_module_set_pm_state(
 				sd, on);
-			if (IS_ERR_VALUE(ret))
+			if (ret)
 				pltfrm_camera_module_pr_err(sd,
 					"set PM state failed (%d), could not power off camera\n",
 					ret);
@@ -1647,10 +1686,9 @@ int pltfrm_camera_module_patch_config(
 			if (IS_ERR_VALUE(ret))
 				goto err;
 			if (ret) {
-				ret =
-					pltfrm_camera_module_write_reglist_node(
-						sd, child_node);
-				if (!IS_ERR_VALUE(ret))
+				ret = pltfrm_camera_module_write_reglist_node(
+					sd, child_node);
+				if (ret)
 					goto err;
 			}
 		}
@@ -1675,7 +1713,6 @@ int pltfrm_camera_module_init(
 	void **pldata)
 {
 	int ret = 0;
-	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct pltfrm_camera_module_data *pdata;
 
 	pltfrm_camera_module_pr_debug(sd, "\n");
@@ -1688,13 +1725,9 @@ int pltfrm_camera_module_init(
 	}
 
 	ret = pltfrm_camera_module_init_gpio(sd);
-	if (IS_ERR_VALUE(ret)) {
+	if (ret)
 		pltfrm_camera_module_pr_err(sd,
 			"GPIO initialization failed (%d)\n", ret);
-	}
-
-	if (IS_ERR_VALUE(ret))
-		devm_kfree(&client->dev, pdata);
 	else
 		*(struct pltfrm_camera_module_data **)pldata = pdata;
 
@@ -1707,9 +1740,8 @@ void pltfrm_camera_module_release(
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
 	struct pltfrm_camera_module_data *pdata =
 		dev_get_platdata(&client->dev);
-	int i;
+	unsigned int i;
 
-        return;
 	/* GPIOs also needs to be freed for other sensors to use */
 	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++) {
 		if (gpio_is_valid(pdata->gpios[i].pltfrm_gpio)) {
@@ -1727,8 +1759,17 @@ void pltfrm_camera_module_release(
 				pdata->regulators.regulator[i].regulator);
 	}
 
+	if (!IS_ERR_OR_NULL(pdata->regulators.regulator)) {
+		devm_kfree(&client->dev,
+			pdata->regulators.regulator);
+		pdata->regulators.regulator = NULL;
+	}
 	if (pdata->pinctrl)
 		devm_pinctrl_put(pdata->pinctrl);
+	if (!IS_ERR_OR_NULL(pdata)) {
+		devm_kfree(&client->dev, pdata);
+		pdata = NULL;
+	}
 }
 
 /* ======================================================================== */
@@ -1794,6 +1835,7 @@ long pltfrm_camera_module_ioctl(struct v4l2_subdev *sd,
 		p_camera_module->flash_exp_percent =
 			pdata->info.flash_exp_percent;
 		p_camera_module->af_support = pdata->info.af_support;
+
 		return 0;
 	} else if (cmd == PLTFRM_CIFCAM_G_DEFRECT) {
 		struct pltfrm_cam_defrect *defrect =
@@ -1820,7 +1862,6 @@ long pltfrm_camera_module_ioctl(struct v4l2_subdev *sd,
 	} else if ((cmd == PLTFRM_CIFCAM_SET_VCM_POS) ||
 		   (cmd == PLTFRM_CIFCAM_GET_VCM_POS) ||
 		   (cmd == PLTFRM_CIFCAM_GET_VCM_MOVE_RES)) {
-
 		af_ctrl = pltfrm_camera_module_get_af_ctrl(sd);
 		if (!IS_ERR_OR_NULL(af_ctrl)) {
 			ret = v4l2_subdev_call(af_ctrl,
@@ -1857,5 +1898,134 @@ int pltfrm_camera_module_get_flip_mirror(
 
 	return mode;
 }
+
+int pltfrm_camera_module_pix_fmt2csi2_dt(int src_pix_fmt)
+{
+	int ret = 0;
+
+	switch (src_pix_fmt) {
+	case MEDIA_BUS_FMT_RGB444_1X12:
+	case MEDIA_BUS_FMT_RGB444_2X8_PADHI_BE:
+	case MEDIA_BUS_FMT_RGB444_2X8_PADHI_LE:
+		ret = CSI2_DT_RGB444;
+		break;
+	case MEDIA_BUS_FMT_RGB555_2X8_PADHI_BE:
+	case MEDIA_BUS_FMT_RGB555_2X8_PADHI_LE:
+		ret = CSI2_DT_RGB555;
+		break;
+	case MEDIA_BUS_FMT_RGB565_1X16:
+	case MEDIA_BUS_FMT_BGR565_2X8_BE:
+	case MEDIA_BUS_FMT_BGR565_2X8_LE:
+	case MEDIA_BUS_FMT_RGB565_2X8_BE:
+	case MEDIA_BUS_FMT_RGB565_2X8_LE:
+		ret = CSI2_DT_RGB565;
+		break;
+	case MEDIA_BUS_FMT_RGB666_1X18:
+	case MEDIA_BUS_FMT_RGB666_1X24_CPADHI:
+	case MEDIA_BUS_FMT_RGB666_1X7X3_SPWG:
+		ret = CSI2_DT_RGB666;
+		break;
+	case MEDIA_BUS_FMT_RBG888_1X24:
+	case MEDIA_BUS_FMT_BGR888_1X24:
+	case MEDIA_BUS_FMT_GBR888_1X24:
+	case MEDIA_BUS_FMT_RGB888_1X24:
+	case MEDIA_BUS_FMT_RGB888_2X12_BE:
+	case MEDIA_BUS_FMT_RGB888_2X12_LE:
+	case MEDIA_BUS_FMT_RGB888_1X7X4_SPWG:
+	case MEDIA_BUS_FMT_RGB888_1X7X4_JEIDA:
+	case MEDIA_BUS_FMT_ARGB8888_1X32:
+	case MEDIA_BUS_FMT_RGB888_1X32_PADHI:
+	case MEDIA_BUS_FMT_RGB101010_1X30:
+	case MEDIA_BUS_FMT_RGB121212_1X36:
+	case MEDIA_BUS_FMT_RGB161616_1X48:
+		ret = CSI2_DT_RGB888;
+		break;
+	case MEDIA_BUS_FMT_Y8_1X8:
+	case MEDIA_BUS_FMT_UV8_1X8:
+	case MEDIA_BUS_FMT_UYVY8_1_5X8:
+	case MEDIA_BUS_FMT_VYUY8_1_5X8:
+	case MEDIA_BUS_FMT_YUYV8_1_5X8:
+	case MEDIA_BUS_FMT_YVYU8_1_5X8:
+	case MEDIA_BUS_FMT_UYVY8_2X8:
+	case MEDIA_BUS_FMT_VYUY8_2X8:
+	case MEDIA_BUS_FMT_YUYV8_2X8:
+	case MEDIA_BUS_FMT_YVYU8_2X8:
+		ret = CSI2_DT_YUV420_8b;
+		break;
+	case MEDIA_BUS_FMT_Y10_1X10:
+	case MEDIA_BUS_FMT_UYVY10_2X10:
+	case MEDIA_BUS_FMT_VYUY10_2X10:
+	case MEDIA_BUS_FMT_YUYV10_2X10:
+	case MEDIA_BUS_FMT_YVYU10_2X10:
+		ret = CSI2_DT_YUV420_10b;
+		break;
+	case MEDIA_BUS_FMT_Y12_1X12:
+	case MEDIA_BUS_FMT_UYVY12_2X12:
+	case MEDIA_BUS_FMT_VYUY12_2X12:
+	case MEDIA_BUS_FMT_YUYV12_2X12:
+	case MEDIA_BUS_FMT_YVYU12_2X12:
+	case MEDIA_BUS_FMT_UYVY8_1X16:
+	case MEDIA_BUS_FMT_VYUY8_1X16:
+	case MEDIA_BUS_FMT_YUYV8_1X16:
+	case MEDIA_BUS_FMT_YVYU8_1X16:
+	case MEDIA_BUS_FMT_YDYUYDYV8_1X16:
+		ret = CSI2_DT_YUV422_8b;
+		break;
+	case MEDIA_BUS_FMT_UYVY10_1X20:
+	case MEDIA_BUS_FMT_VYUY10_1X20:
+	case MEDIA_BUS_FMT_YUYV10_1X20:
+	case MEDIA_BUS_FMT_YVYU10_1X20:
+	case MEDIA_BUS_FMT_VUY8_1X24:
+	case MEDIA_BUS_FMT_YUV8_1X24:
+	case MEDIA_BUS_FMT_UYYVYY8_0_5X24:
+	case MEDIA_BUS_FMT_UYVY12_1X24:
+	case MEDIA_BUS_FMT_VYUY12_1X24:
+	case MEDIA_BUS_FMT_YUYV12_1X24:
+	case MEDIA_BUS_FMT_YVYU12_1X24:
+	case MEDIA_BUS_FMT_YUV10_1X30:
+	case MEDIA_BUS_FMT_UYYVYY10_0_5X30:
+	case MEDIA_BUS_FMT_AYUV8_1X32:
+	case MEDIA_BUS_FMT_UYYVYY12_0_5X36:
+	case MEDIA_BUS_FMT_YUV12_1X36:
+	case MEDIA_BUS_FMT_YUV16_1X48:
+	case MEDIA_BUS_FMT_UYYVYY16_0_5X48:
+		ret = CSI2_DT_YUV422_10b;
+		break;
+	case MEDIA_BUS_FMT_SBGGR8_1X8:
+	case MEDIA_BUS_FMT_SGBRG8_1X8:
+	case MEDIA_BUS_FMT_SGRBG8_1X8:
+	case MEDIA_BUS_FMT_SRGGB8_1X8:
+		ret = CSI2_DT_RAW8;
+		break;
+	case MEDIA_BUS_FMT_SBGGR10_ALAW8_1X8:
+	case MEDIA_BUS_FMT_SGBRG10_ALAW8_1X8:
+	case MEDIA_BUS_FMT_SGRBG10_ALAW8_1X8:
+	case MEDIA_BUS_FMT_SRGGB10_ALAW8_1X8:
+	case MEDIA_BUS_FMT_SBGGR10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SGBRG10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SGRBG10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SRGGB10_DPCM8_1X8:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_BE:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADHI_LE:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADLO_BE:
+	case MEDIA_BUS_FMT_SBGGR10_2X8_PADLO_LE:
+	case MEDIA_BUS_FMT_SBGGR10_1X10:
+	case MEDIA_BUS_FMT_SGBRG10_1X10:
+	case MEDIA_BUS_FMT_SGRBG10_1X10:
+	case MEDIA_BUS_FMT_SRGGB10_1X10:
+		ret = CSI2_DT_RAW10;
+		break;
+	case MEDIA_BUS_FMT_SBGGR12_1X12:
+	case MEDIA_BUS_FMT_SGBRG12_1X12:
+	case MEDIA_BUS_FMT_SGRBG12_1X12:
+	case MEDIA_BUS_FMT_SRGGB12_1X12:
+		ret = CSI2_DT_RAW12;
+		break;
+	default:
+		break;
+	}
+	return ret;
+}
+
 #endif
 

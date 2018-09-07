@@ -29,6 +29,7 @@
 #include <linux/slab.h>
 #include <linux/soc/rockchip/pvtm.h>
 #include <linux/thermal.h>
+#include <linux/rockchip/cpu.h>
 #include <soc/rockchip/rockchip_opp_select.h>
 
 #include "../clk/rockchip/clk.h"
@@ -41,19 +42,46 @@ struct cluster_info {
 	cpumask_t cpus;
 	unsigned int reboot_freq;
 	unsigned int threshold_freq;
+	unsigned int scale_rate;
+	unsigned int temp_limit_rate;
 	int volt_sel;
 	int scale;
 	int process;
 	bool offline;
 	bool rebooting;
 	bool freq_limit;
+	bool is_check_init;
 };
 static LIST_HEAD(cluster_info_list);
+
+static int px30_get_soc_info(struct device *dev, struct device_node *np,
+			     int *bin, int *process)
+{
+	int ret = 0, value = -EINVAL;
+
+	if (!bin)
+		return 0;
+
+	if (of_property_match_string(np, "nvmem-cell-names",
+				     "performance") >= 0) {
+		ret = rockchip_get_efuse_value(np, "performance", &value);
+		if (ret) {
+			dev_err(dev, "Failed to get soc performance value\n");
+			return ret;
+		}
+		*bin = value;
+	}
+	if (*bin >= 0)
+		dev_info(dev, "bin=%d\n", *bin);
+
+	return ret;
+}
 
 static int rk3288_get_soc_info(struct device *dev, struct device_node *np,
 			       int *bin, int *process)
 {
 	int ret = 0, value = -EINVAL;
+	char *name;
 
 	if (!bin)
 		goto next;
@@ -68,9 +96,14 @@ static int rk3288_get_soc_info(struct device *dev, struct device_node *np,
 		else
 			*bin = 1;
 	}
-	if (of_property_match_string(np, "nvmem-cell-names",
-				     "performance") >= 0) {
-		ret = rockchip_get_efuse_value(np, "performance", &value);
+
+	if (soc_is_rk3288w())
+		name = "performance-w";
+	else
+		name = "performance";
+
+	if (of_property_match_string(np, "nvmem-cell-names", name) >= 0) {
+		ret = rockchip_get_efuse_value(np, name, &value);
 		if (ret) {
 			dev_err(dev, "Failed to get soc performance value\n");
 			goto out;
@@ -93,7 +126,7 @@ next:
 			dev_err(dev, "Failed to get soc process version\n");
 			goto out;
 		}
-		if (value == 0 || value == 1)
+		if (soc_is_rk3288() && (value == 0 || value == 1))
 			*process = 0;
 	}
 	if (*process >= 0)
@@ -105,12 +138,20 @@ out:
 
 static const struct of_device_id rockchip_cpufreq_of_match[] = {
 	{
+		.compatible = "rockchip,px30",
+		.data = (void *)&px30_get_soc_info,
+	},
+	{
 		.compatible = "rockchip,rk3288",
 		.data = (void *)&rk3288_get_soc_info,
 	},
 	{
 		.compatible = "rockchip,rk3288w",
 		.data = (void *)&rk3288_get_soc_info,
+	},
+	{
+		.compatible = "rockchip,rk3326",
+		.data = (void *)&px30_get_soc_info,
 	},
 	{},
 };
@@ -122,6 +163,25 @@ static struct cluster_info *rockchip_cluster_info_lookup(int cpu)
 	list_for_each_entry(cluster, &cluster_info_list, list_head) {
 		if (cpumask_test_cpu(cpu, &cluster->cpus))
 			return cluster;
+	}
+
+	return NULL;
+}
+
+static struct cluster_info *rockchip_cluster_lookup_by_dev(struct device *dev)
+{
+	struct cluster_info *cluster;
+	struct device *cpu_dev;
+	int cpu;
+
+	list_for_each_entry(cluster, &cluster_info_list, list_head) {
+		for_each_cpu(cpu, &cluster->cpus) {
+			cpu_dev = get_cpu_device(cpu);
+			if (!cpu_dev)
+				continue;
+			if (cpu_dev == dev)
+				return cluster;
+		}
 	}
 
 	return NULL;
@@ -139,10 +199,91 @@ int rockchip_cpufreq_get_scale(int cpu)
 }
 EXPORT_SYMBOL_GPL(rockchip_cpufreq_get_scale);
 
+int rockchip_cpufreq_set_scale_rate(struct device *dev, unsigned long rate)
+{
+	struct cluster_info *cluster;
+
+	cluster = rockchip_cluster_lookup_by_dev(dev);
+	if (!cluster)
+		return -EINVAL;
+	cluster->scale_rate = rate / 1000;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rockchip_cpufreq_set_scale_rate);
+
+int rockchip_cpufreq_check_rate_volt(struct device *dev)
+{
+	struct cluster_info *cluster;
+
+	cluster = rockchip_cluster_lookup_by_dev(dev);
+	if (!cluster)
+		return -EINVAL;
+	if (cluster->is_check_init)
+		return 0;
+	dev_pm_opp_check_rate_volt(dev, true);
+	cluster->is_check_init = true;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rockchip_cpufreq_check_rate_volt);
+
+int rockchip_cpufreq_set_temp_limit_rate(struct device *dev, unsigned long rate)
+{
+	struct cluster_info *cluster;
+
+	cluster = rockchip_cluster_lookup_by_dev(dev);
+	if (!cluster)
+		return -EINVAL;
+	cluster->temp_limit_rate = rate / 1000;
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rockchip_cpufreq_set_temp_limit_rate);
+
+int rockchip_cpufreq_update_policy(struct device *dev)
+{
+	struct cluster_info *cluster;
+	unsigned int cpu;
+
+	cluster = rockchip_cluster_lookup_by_dev(dev);
+	if (!cluster)
+		return -EINVAL;
+	cpu = cpumask_any(&cluster->cpus);
+	cpufreq_update_policy(cpu);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rockchip_cpufreq_update_policy);
+
+int rockchip_cpufreq_update_cur_volt(struct device *dev)
+{
+	struct cluster_info *cluster;
+	struct cpufreq_policy *policy;
+	unsigned int cpu;
+
+	cluster = rockchip_cluster_lookup_by_dev(dev);
+	if (!cluster)
+		return -EINVAL;
+	cpu = cpumask_any(&cluster->cpus);
+
+	policy = cpufreq_cpu_get(cpu);
+	if (!policy)
+		return -ENODEV;
+	down_write(&policy->rwsem);
+	dev_pm_opp_check_rate_volt(dev, false);
+	up_write(&policy->rwsem);
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(rockchip_cpufreq_update_cur_volt);
+
 static int rockchip_cpufreq_cluster_init(int cpu, struct cluster_info *cluster)
 {
 	struct device_node *np;
+	struct property *pp;
 	struct device *dev;
+	char *reg_name = NULL;
 	int ret = 0, bin = -EINVAL;
 
 	cluster->process = -EINVAL;
@@ -152,6 +293,17 @@ static int rockchip_cpufreq_cluster_init(int cpu, struct cluster_info *cluster)
 	dev = get_cpu_device(cpu);
 	if (!dev)
 		return -ENODEV;
+
+	pp = of_find_property(dev->of_node, "cpu-supply", NULL);
+	if (pp) {
+		reg_name = "cpu";
+	} else {
+		pp = of_find_property(dev->of_node, "cpu0-supply", NULL);
+		if (pp)
+			reg_name = "cpu0";
+		else
+			return -ENOENT;
+	}
 
 	np = of_parse_phandle(dev->of_node, "operating-points-v2", 0);
 	if (!np) {
@@ -174,7 +326,7 @@ static int rockchip_cpufreq_cluster_init(int cpu, struct cluster_info *cluster)
 
 	rockchip_get_soc_info(dev, rockchip_cpufreq_of_match,
 			      &bin, &cluster->process);
-	rockchip_get_scale_volt_sel(dev, "cpu_leakage", "cpu",
+	rockchip_get_scale_volt_sel(dev, "cpu_leakage", reg_name,
 				    bin, cluster->process,
 				    &cluster->scale, &cluster->volt_sel);
 np_err:
@@ -263,6 +415,16 @@ static int rockchip_cpufreq_policy_notifier(struct notifier_block *nb,
 	cluster = rockchip_cluster_info_lookup(cpu);
 	if (!cluster)
 		return NOTIFY_DONE;
+
+	if (cluster->scale_rate) {
+		if (cluster->scale_rate < policy->max)
+			policy->max = cluster->scale_rate;
+	}
+
+	if (cluster->temp_limit_rate) {
+		if (cluster->temp_limit_rate < policy->max)
+			policy->max = cluster->temp_limit_rate;
+	}
 
 	if (cluster->rebooting) {
 		if (cluster->reboot_freq < policy->max)

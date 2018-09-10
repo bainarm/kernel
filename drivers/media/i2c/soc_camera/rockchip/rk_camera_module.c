@@ -282,7 +282,7 @@ err:
 static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 	struct v4l2_subdev *sd)
 {
-	int ret = 0;
+	int i, ret = 0;
 	int elem_size, elem_index;
 	const char *str = "";
 	struct i2c_client *client = v4l2_get_subdevdata(sd);
@@ -306,20 +306,18 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 
 	ret = of_property_read_string(np, OF_CAMERA_MODULE_MCLK_NAME, &str);
 	if (ret) {
-		pltfrm_camera_module_pr_err(sd,
+		pltfrm_camera_module_pr_warn(sd,
 			"cannot not get camera-module-mclk-name property of node %s\n",
 			np->name);
-		ret = -ENODEV;
-		goto err;
-	}
-
-	pdata->mclk = devm_clk_get(&client->dev, str);
-	if (IS_ERR_OR_NULL(pdata->mclk)) {
-		pltfrm_camera_module_pr_err(sd,
-			"cannot not get %s property of node %s\n",
-			str, np->name);
-		ret = -ENODEV;
-		goto err;
+	} else {
+		pdata->mclk = devm_clk_get(&client->dev, str);
+		if (IS_ERR_OR_NULL(pdata->mclk)) {
+			pltfrm_camera_module_pr_err(sd,
+				"cannot not get %s property of node %s\n",
+				str, np->name);
+			ret = -ENODEV;
+			goto err;
+		}
 	}
 
 	ret = of_property_read_string(np,
@@ -465,6 +463,10 @@ static struct pltfrm_camera_module_data *pltfrm_camera_module_get_data(
 			regulator++;
 		} while (--elem_size);
 	}
+
+	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++)
+		pdata->gpios[i].pltfrm_gpio = -1;
+
 	pdata->gpios[0].label = PLTFRM_CAMERA_MODULE_PIN_PD;
 	pdata->gpios[0].pltfrm_gpio = of_get_named_gpio_flags(
 		np,
@@ -1452,15 +1454,16 @@ int pltfrm_camera_module_set_pm_state(
 			PLTFRM_CAMERA_MODULE_PIN_PWR_3RD,
 			PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
 
-		pltfrm_camera_module_set_pin_state(
-			sd,
-			PLTFRM_CAMERA_MODULE_PIN_RESET,
-			PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
+		//pltfrm_camera_module_set_pin_state(
+		//	sd,
+		//	PLTFRM_CAMERA_MODULE_PIN_RESET,
+		//	PLTFRM_CAMERA_MODULE_PIN_STATE_ACTIVE);
 		usleep_range(100, 300);
 		pltfrm_camera_module_set_pin_state(
 			sd,
 			PLTFRM_CAMERA_MODULE_PIN_RESET,
 			PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
+		usleep_range(100, 300);
 
 		mclk_para.io_voltage = PLTFRM_IO_1V8;
 		mclk_para.drv_strength = PLTFRM_DRV_STRENGTH_2;
@@ -1474,16 +1477,19 @@ int pltfrm_camera_module_set_pm_state(
 			ioctl,
 			PLTFRM_CIFCAM_G_ITF_CFG,
 			(void *)&itf_cfg) == 0) {
-			clk_set_rate(pdata->mclk, itf_cfg.mclk_hz);
+			if (!IS_ERR_OR_NULL(pdata->mclk))
+				clk_set_rate(pdata->mclk, itf_cfg.mclk_hz);
 		} else {
 			pltfrm_camera_module_pr_err(sd,
 				"PLTFRM_CIFCAM_G_ITF_CFG failed, mclk set 24m default.\n");
-			clk_set_rate(pdata->mclk, 24000000);
+			if (!IS_ERR_OR_NULL(pdata->mclk))
+				clk_set_rate(pdata->mclk, 24000000);
 		}
-		clk_prepare_enable(pdata->mclk);
+		if (!IS_ERR_OR_NULL(pdata->mclk))
+			clk_prepare_enable(pdata->mclk);
 	} else {
 		clk_disable_unprepare(pdata->mclk);
-
+#if 0
 		pltfrm_camera_module_set_pin_state(
 			sd,
 			PLTFRM_CAMERA_MODULE_PIN_PWR_3RD,
@@ -1498,7 +1504,7 @@ int pltfrm_camera_module_set_pm_state(
 			sd,
 			PLTFRM_CAMERA_MODULE_PIN_PWR,
 			PLTFRM_CAMERA_MODULE_PIN_STATE_INACTIVE);
-
+#endif
 		if (pdata->regulators.regulator) {
 			for (i = 0; i < pdata->regulators.cnt; i++) {
 				struct pltfrm_camera_module_regulator
@@ -1612,6 +1618,7 @@ int pltfrm_camera_module_s_power(
 				sd, pdata->pins_default);
 		}
 	} else {
+#if 0
 		/* Disable clock and voltage to Secondary Camera Sensor  */
 		ret = pltfrm_camera_module_set_pinctrl_state(
 			sd, pdata->pins_sleep);
@@ -1627,6 +1634,7 @@ int pltfrm_camera_module_s_power(
 					"set PM state to %d successful, camera module is off\n",
 					on);
 		}
+#endif
 	}
 	return ret;
 }
@@ -1742,6 +1750,7 @@ void pltfrm_camera_module_release(
 		dev_get_platdata(&client->dev);
 	unsigned int i;
 
+	return;
 	/* GPIOs also needs to be freed for other sensors to use */
 	for (i = 0; i < ARRAY_SIZE(pdata->gpios); i++) {
 		if (gpio_is_valid(pdata->gpios[i].pltfrm_gpio)) {

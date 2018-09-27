@@ -1287,10 +1287,10 @@ long aptina_camera_module_ioctl(struct v4l2_subdev *sd,
 		timings->exposure_valid_frame[1] =
 			cam_mod->custom.exposure_valid_frame[1];
 
-		/*
-		 *timings->exp_time = cam_mod->exp_config.exp_time;
-		 *timings->gain = cam_mod->exp_config.gain;
-		 */
+		
+		 timings->exp_time = cam_mod->exp_config.exp_time;
+		 timings->gain = cam_mod->exp_config.gain;
+		 
 		if (cam_mod->active_config) {
 			timings->max_exp_gain_h = cam_mod->active_config->max_exp_gain_h;
 			timings->max_exp_gain_l = cam_mod->active_config->max_exp_gain_l;

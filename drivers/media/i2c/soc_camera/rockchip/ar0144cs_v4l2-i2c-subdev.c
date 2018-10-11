@@ -28,7 +28,10 @@
 #define AR0144CS_EXT_CLK 24000000
 
 #define AR0144CS_AEC_PK_AGAIN_REG 0x3060 /* gain Bit 0-5 */
-#define AR0144CS_FETCH_AGAIN(VAL) (VAL & 0x007F)
+#define AR0144CS_FETCH_AGAIN(VAL) (VAL & 0x007f)
+
+#define AR0144CS_AEC_PK_DGAIN_REG 0x305E /* gain Bit 0-5 */
+#define AR0144CS_FETCH_DGAIN(VAL) (VAL & 0x07FF)
 
 
 #define AR0144CS_AEC_PK_LONG_EXPO_REG 0x3012 /* Exposure Bits 0-15 */
@@ -285,32 +288,25 @@ static int ar0144cs_write_aec(struct aptina_camera_module *cam_mod)
 		(cam_mod->state == APTINA_CAMERA_MODULE_STREAMING)) {
 		u32 tgain = cam_mod->exp_config.gain;
 		u32 exp_time = cam_mod->exp_config.exp_time;
-		u32 coarse_gain_reg, fine_gain_reg, again_reg;
+		u32 again, dgain;
+
 		
 		mutex_lock(&cam_mod->lock);
 		tgain = tgain * cam_mod->exp_config.gain_percent / 100;
-				
-		if (tgain < 0x20) { /* 1x~2x */
-			coarse_gain_reg = 0;
-			fine_gain_reg =  32 - 512/tgain;
-			again_reg = ((coarse_gain_reg & 0x07) <<4) | (fine_gain_reg & 0x0f);
-			if (again_reg < 0x0D) 
-				again_reg = 0x0D;
-			
-		} else if (tgain < 0x40) { /* 2x~4x */
-			coarse_gain_reg = 1;
-			fine_gain_reg =  32 - 1024/tgain;
-			again_reg = ((coarse_gain_reg & 0x07) <<4) | (fine_gain_reg & 0x0f);			
-		} else if (tgain < 0x80) { /* 4x~8x*/
-			coarse_gain_reg = 2;
-			fine_gain_reg =  32 - 2048/tgain;
-			again_reg = ((coarse_gain_reg & 0x07) <<4) | (fine_gain_reg & 0x0f);		
-		} else if (tgain < 0x100){ /* 8x~ 16*/
-			coarse_gain_reg = 3;
-			fine_gain_reg =  32 - 4096/tgain;
-			again_reg = ((coarse_gain_reg & 0x07) <<4) | (fine_gain_reg & 0x0f);		
-		} else if(tgain >= 0x100){ 
-			again_reg = 0x40;
+
+		
+		if (tgain < 256) { /* 1x~2x */
+			again = 0x00;
+			dgain = tgain;
+		} else if (tgain < 512) { /* 2x~4x */
+			again = 0x10;
+			dgain = tgain >> 1;
+		} else if (tgain < 1024) { /* 4x~8x*/
+			again = 0x20;
+			dgain = tgain >> 2;
+		} else { /* 8x~ */
+			again = 0x30;
+			dgain = tgain >> 3;
 		}
 
 
@@ -324,7 +320,11 @@ static int ar0144cs_write_aec(struct aptina_camera_module *cam_mod)
 
 		ret |= aptina_camera_module_write_reg(cam_mod,
 			AR0144CS_AEC_PK_AGAIN_REG,
-			AR0144CS_FETCH_AGAIN(again_reg));
+			AR0144CS_FETCH_AGAIN(again));
+
+		ret |= aptina_camera_module_write_reg(cam_mod,
+			AR0144CS_AEC_PK_DGAIN_REG,
+			AR0144CS_FETCH_DGAIN(dgain));
 
 		ret |= aptina_camera_module_write_reg(cam_mod,
 			AR0144CS_AEC_PK_LONG_EXPO_REG,
@@ -334,7 +334,7 @@ static int ar0144cs_write_aec(struct aptina_camera_module *cam_mod)
 		if (!cam_mod->auto_adjust_fps)
 			ret |= ar0144cs_set_vts(cam_mod, cam_mod->exp_config.vts_value);
 
-		/* NO GROUPED_PARAMETER_HOLD*/
+		/* GROUPED_PARAMETER_HOLD*/
 		ret |= aptina_camera_module_write_reg(cam_mod,
 			0x3022, 0x00);
 		mutex_unlock(&cam_mod->lock);
@@ -652,6 +652,11 @@ static struct aptina_camera_module_custom_config ar0144cs_custom_config = {
 	.configs = ar0144cs_configs,
 	.num_configs = ARRAY_SIZE(ar0144cs_configs),
 	.power_up_delays_ms = {5, 30, 30},
+	/*
+	 * 0: Exposure time valid fileds;
+	 * 1: Exposure gain valid fileds;
+	 * (2 fileds == 1 frames)
+	 */
 	.exposure_valid_frame = {4, 4}
 };
 

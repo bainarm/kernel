@@ -852,7 +852,8 @@
                 rockchip,pd-gpio = <&gpio2 RK_PB4 GPIO_ACTIVE_HIGH>;
                 rockchip,rst-gpio = <&gpio2 RK_PA1 GPIO_ACTIVE_HIGH>;
                 rockchip,camera-module-mclk-name = "clk_cif_out";*/
-
+		rockchip,pd-gpio = <&gpio4 RK_PA5 GPIO_ACTIVE_LOW>;
+		rockchip,rst-gpio = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
 		rockchip,camera-module-facing = "back";
 		rockchip,camera-module-name = "MDG001";
 		rockchip,camera-module-len-name = "NONE";

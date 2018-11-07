@@ -380,6 +380,7 @@ static int aptina_camera_module_write_config(
 {
 	int ret = 0;
 
+
 	pltfrm_camera_module_pr_debug(&cam_mod->sd, "\n");
 
 	if (IS_ERR_OR_NULL(cam_mod->active_config)) {
@@ -388,6 +389,11 @@ static int aptina_camera_module_write_config(
 		ret = -EFAULT;
 		goto err;
 	}
+
+	if (!IS_ERR_OR_NULL(cam_mod->custom.set_flip))
+		cam_mod->custom.set_flip(cam_mod,
+		cam_mod->active_config->reg_table,
+		cam_mod->active_config->reg_table_num_entries);
 
 	ret = aptina_write_reglist(&cam_mod->sd,
 		cam_mod->active_config->reg_table,
@@ -830,7 +836,7 @@ int aptina_camera_module_s_power(struct v4l2_subdev *sd, int on)
 				APTINA_CAMERA_MODULE_SW_STANDBY;
 		}
 		if (cam_mod->state == APTINA_CAMERA_MODULE_SW_STANDBY) {
-			#if 0
+			#if 0			
 			ret = pltfrm_camera_module_set_pin_state(
 				&cam_mod->sd,
 				PLTFRM_CAMERA_MODULE_PIN_PD,

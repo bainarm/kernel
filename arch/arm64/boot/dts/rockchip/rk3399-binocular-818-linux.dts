@@ -480,8 +480,8 @@
 	assigned-clock-parents = <&clkin_gmac>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rgmii_pins>;
-	tx_delay = <0x28>;
-	rx_delay = <0x11>;
+	tx_delay = <0x20>;
+	rx_delay = <0x0d>;
 	status = "okay";
 };
 

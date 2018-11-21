@@ -882,7 +882,6 @@
 		pinctrl-0 = <&cam0_default_pins>;
 		pinctrl-1 = <&cam0_sleep_pins>;
 		/*this for RX0 and HDMI-IN switch*/
-		rockchip,pwr-gpio = <&gpio2 RK_PB0 GPIO_ACTIVE_HIGH>;
 		rockchip,pd-gpio = <&gpio2 RK_PA7 GPIO_ACTIVE_LOW>;
 		rockchip,rst-gpio = <&gpio2 RK_PA6 GPIO_ACTIVE_HIGH>;
 		rockchip,camera-module-mclk-name = "clk_cif_out";
@@ -894,8 +893,8 @@
 		rockchip,camera-module-orientation = <0>;
 		rockchip,camera-module-iq-flip = <0>;
 		rockchip,camera-module-iq-mirror = <0>;
-		rockchip,camera-module-flip = <0>;
-		rockchip,camera-module-mirror = <0>;
+		rockchip,camera-module-flip = <1>;
+		rockchip,camera-module-mirror = <1>;
 		rockchip,camera-module-defrect0 = <1280 800 0 0 1280 800>;
 		rockchip,camera-module-flash-support = <0>;
 		rockchip,camera-module-mipi-dphy-index = <0>;

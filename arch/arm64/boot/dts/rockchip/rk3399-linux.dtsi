@@ -221,13 +221,13 @@
 		};
 		cam1_default_pins: cam1-default-pins {
 			rockchip,pins =
-				<2 27 RK_FUNC_GPIO &pcfg_pull_none>,
-				<2 8 RK_FUNC_3 &pcfg_pull_none>;
+				<4 28 RK_FUNC_GPIO &pcfg_pull_none>,
+				<4 29 RK_FUNC_3 &pcfg_pull_none>;
 		};
 		cam1_sleep_pins: cam1-sleep-pins {
 			rockchip,pins =
-				<2 27 RK_FUNC_3 &pcfg_pull_none>,
-				<2 8 RK_FUNC_GPIO &pcfg_pull_none>;
+				<4 28 RK_FUNC_3 &pcfg_pull_none>,
+				<4 29 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 };
